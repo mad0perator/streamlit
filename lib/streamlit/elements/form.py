@@ -18,6 +18,7 @@ from typing import cast, Optional, NamedTuple
 import streamlit
 from streamlit.elements.utils import _get_widget_id
 from streamlit.errors import StreamlitAPIException
+from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto import Block_pb2, Button_pb2
 from streamlit.report_thread import get_report_ctx
 
@@ -42,7 +43,8 @@ def _current_form(
     To find the current form, we walk up the dg_stack until we find
     a DeltaGenerator that has FormData.
     """
-    if this_dg != this_dg._main_dg:
+    # (HK) TODO: Discuss this solution with Tim
+    if this_dg._root_container == RootContainer.SIDEBAR:
         # We're being invoked via an `st.sidebar.foo` pattern - ignore the
         # current `with` dg.
         return this_dg._form_data
@@ -81,7 +83,7 @@ def _create_form_id(submit_label: str, key: Optional[str]) -> str:
 
 
 def current_form_id(dg: "streamlit.delta_generator.DeltaGenerator") -> str:
-    """Return the form_id for the current form, or the empty string if  we're
+    """Return the form_id for the current form, or the empty string if we're
     not inside an `st.form` block.
 
     (We return the empty string, instead of None, because this value is
