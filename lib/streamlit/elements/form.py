@@ -18,7 +18,6 @@ from typing import cast, Optional, NamedTuple
 import streamlit
 from streamlit.elements.utils import _get_widget_id
 from streamlit.errors import StreamlitAPIException
-from streamlit.proto.RootContainer_pb2 import RootContainer
 from streamlit.proto import Block_pb2, Button_pb2
 from streamlit.report_thread import get_report_ctx
 
