@@ -67,7 +67,6 @@ import { MetricsManager } from "lib/MetricsManager"
 import { FileUploadClient } from "lib/FileUploadClient"
 import { logError, logMessage } from "lib/log"
 import { ReportRoot } from "lib/ReportNode"
-import { LocalStore } from "lib/storageUtils"
 
 import { UserSettings } from "components/core/StreamlitDialog/UserSettings"
 import { ComponentRegistry } from "components/widgets/CustomComponent"
@@ -79,7 +78,10 @@ import {
   createPresetThemes,
   createTheme,
   ThemeConfig,
+  getCachedTheme,
+  setCachedTheme,
 } from "theme"
+import { FormsData } from "./components/widgets/Form"
 
 import { StyledApp } from "./styled-components"
 
@@ -122,7 +124,7 @@ interface State {
   deployParams?: IDeployParams | null
   developerMode: boolean
   themeHash: string | null
-  pendingFormIds: Set<string>
+  formsData: FormsData
 }
 
 const ELEMENT_LIST_BUFFER_TIMEOUT_MS = 10
@@ -183,7 +185,7 @@ export class App extends PureComponent<Props, State> {
       // developer mode should be designed in the long term.
       developerMode: window.location.host.includes("localhost"),
       themeHash: null,
-      pendingFormIds: new Set<string>(),
+      formsData: new FormsData(),
     }
 
     this.sessionEventDispatcher = new SessionEventDispatcher()
@@ -191,14 +193,28 @@ export class App extends PureComponent<Props, State> {
 
     this.widgetMgr = new WidgetStateManager({
       sendRerunBackMsg: this.sendRerunBackMsg,
-      pendingFormsChanged: pendingFormIds => this.setState({ pendingFormIds }),
+      pendingFormsChanged: formIds =>
+        this.setState(state => ({
+          formsData: state.formsData.setPendingForms(formIds),
+        })),
     })
 
-    this.uploadClient = new FileUploadClient(() => {
-      return this.connectionManager
-        ? this.connectionManager.getBaseUriParts()
-        : undefined
-    }, true)
+    this.uploadClient = new FileUploadClient({
+      getServerUri: () => {
+        return this.connectionManager
+          ? this.connectionManager.getBaseUriParts()
+          : undefined
+      },
+      formsWithPendingRequestsChanged: formIds =>
+        // A form cannot be submitted if it contains a FileUploader widget
+        // that's currently uploading. We write that state here, in response
+        // to a FileUploadClient callback. The FormSubmitButton element
+        // reads the state.
+        this.setState(state => ({
+          formsData: state.formsData.setFormsWithUploads(formIds),
+        })),
+      csrfEnabled: true,
+    })
 
     this.componentRegistry = new ComponentRegistry(() => {
       return this.connectionManager
@@ -620,17 +636,12 @@ export class App extends PureComponent<Props, State> {
       if (!isPresetThemeActive) {
         // If the active theme is a custom theme, update the local store since
         // it has changed.
-        window.localStorage.setItem(
-          LocalStore.ACTIVE_THEME,
-          JSON.stringify(customTheme)
-        )
+        setCachedTheme(customTheme)
       }
       // For now users can only add one custom theme.
       this.props.theme.addThemes([customTheme])
 
-      const userPreference = window.localStorage.getItem(
-        LocalStore.ACTIVE_THEME
-      )
+      const userPreference = getCachedTheme()
       if (userPreference === null || !isPresetThemeActive) {
         this.props.theme.setTheme(customTheme)
       }
@@ -1017,7 +1028,6 @@ export class App extends PureComponent<Props, State> {
       reportRunState,
       sharingEnabled,
       userSettings,
-      pendingFormIds,
     } = this.state
     const outerDivClass = classNames("stApp", {
       "streamlit-embedded": isEmbeddedInIFrame(),
@@ -1094,7 +1104,7 @@ export class App extends PureComponent<Props, State> {
               widgetsDisabled={connectionState !== ConnectionState.CONNECTED}
               uploadClient={this.uploadClient}
               componentRegistry={this.componentRegistry}
-              pendingFormIds={pendingFormIds}
+              formsData={this.state.formsData}
             />
             {renderedDialog}
           </StyledApp>
